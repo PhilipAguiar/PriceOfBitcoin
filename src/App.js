@@ -1,28 +1,28 @@
 import "./App.scss";
 import axios from "axios";
 import { useState, useRef, useEffect } from "react";
-// const accountSid = 'ACcb85d0e04d2b6e7a00d1ed4e584c2d81';
-// const authToken = '11fc2071c29d17165f18267d9c4dc218';
-// const client = require('twilio')(accountSid, authToken);
-
-const BASE_URL = "https://api.twilio.com/2010-04-01";
+import { db } from "./utils/firebase";
+import { set, ref, onValue } from "firebase/database";
+import { v4 as uuidv4 } from "uuid";
 
 function App() {
   const [price, setPrice] = useState();
-  const [cryptoCurrency, setCryptoCurrency] = useState({ name: "Bitcoin", id: "BTC" });
+  const [cryptoCurrency, setCryptoCurrency] = useState({ name: "Bitcoin", ticker: "BTC" });
   const [fiatCurrency, setFiatCurrency] = useState("USD");
-  const [fiatCurrencyList, setFiatCurrencyList] = useState([]);
   const [cryptoCurrencyList, setCryptoCurrencyList] = useState([]);
+  const [phoneError, setPhoneError] = useState(false);
+  const [priceTargetError, setPriceTargetError] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
   const cryptoRef = useRef();
   const priceTargetRef = useRef();
   const fiatRef = useRef();
   const phoneRef = useRef();
+  const belowAboveRef = useRef();
 
+  // Live updates the current price of selected crypto currency in chosen fiat currency
   useEffect(() => {
-    axios.get(`https://api.coinbase.com/v2/prices/${cryptoCurrency.id}-${fiatCurrency}/buy`).then((res) => {
+    axios.get(`https://api.coinbase.com/v2/prices/${cryptoCurrency.ticker}-${fiatCurrency}/buy`).then((res) => {
       setPrice(res.data.data.amount);
-
-      console.log("test");
     });
   }, [cryptoCurrency, fiatCurrency]);
 
@@ -31,52 +31,88 @@ function App() {
       res.data.forEach((currency) => {
         if (currency.details.type === "crypto") {
           setCryptoCurrencyList((prevList) => {
-            return [...prevList, { id: currency.id, name: currency.name }];
+            return [...prevList, { ticker: currency.id, name: currency.name }];
           });
         }
       });
     });
 
-    axios.get("https://api.coinbase.com/v2/currencies").then((res) => {
-      res.data.data.forEach((currency) => {
-        setFiatCurrencyList((prevList) => [...prevList, currency.id]);
-        // console.log(fiatCurrencyList);
-      });
+    // axios.get("https://api.coinbase.com/v2/currencies").then((res) => {
+    //   res.data.data.forEach((currency) => {
+    //     setFiatCurrencyList((prevList) => [...prevList, currency.ticker]);
+    //     // console.log(fiatCurrencyList);
+    //   });
+    // });
+  }, []);
+
+  // For testing accessing database
+
+  useEffect(() => {
+    onValue(ref(db), (snapshot) => {
+      const data = snapshot.val();
+      if (data !== null) {
+        console.log(Object.values(data));
+      }
     });
   }, []);
 
-  // setTimeout(() => {
-  //   axios.get(`https://api.coinbase.com/v2/prices/${cryptoCurrency}-${fiatCurrency}/buy`).then((res) => {
-  //     setPrice(res.data.data.amount);
-  //     console.log("test")
-  //     // setFiatCurrency(fiatRef.value);
-  //   });
-  // }, 30000);
+  //Updates active crypto currency on change
 
   const changeCryptoHandler = (e) => {
-    let selectedCrypto = e.target.options[e.target.selectedIndex].value;
+    let selectedCryptoTicker = e.target.options[e.target.selectedIndex].value;
 
-    let selectedCryptoTicker = cryptoCurrencyList.find((crypto) => {
-      return crypto.name === selectedCrypto;
+    let selectedCrypto = cryptoCurrencyList.find((crypto) => {
+      return crypto.ticker === selectedCryptoTicker;
     });
-    console.log("name/id", selectedCrypto, selectedCryptoTicker);
-    setCryptoCurrency({ name: selectedCrypto, id: selectedCryptoTicker.id });
+
+    let selectedCryptoName = selectedCrypto.name;
+
+    setCryptoCurrency({ name: selectedCryptoName, ticker: selectedCryptoTicker });
   };
+
+  // updates fiat currency on change
 
   const changeFiatHandler = (e) => {
     setFiatCurrency(e.target.options[e.target.selectedIndex].value);
   };
 
-  // const handleSubmit = (e) => {
-  //   client.messages
-  //       .create({
-  //          body: 'Thanks for signing up ',
-  //          messagingServiceSid: 'MG9358bc3ae20b8ebbb053bd3d7597cef8',
-  //          to: '+16475092822'
-  //        })
-  //       .then(message => console.log(message.sid))
-  //       .done();
-  // }
+  const handleSubmit = (e) => {
+    e.preventDefault();
+
+    // Regex for phone validation
+
+    if (!/(\+\d{1,3}\s?)?((\(\d{3}\)\s?)|(\d{3})(\s|-?))(\d{3}(\s|-?))(\d{4})(\s?(([E|e]xt[:|.|]?)|x|X)(\s?\d+))?/g.test(phoneRef.current.value)) {
+      setPhoneError(true);
+    } else {
+      setPhoneError(false);
+    }
+
+    // Check to make sure price target was given
+
+    if (priceTargetRef.current.value === "") {
+      setPriceTargetError(true);
+    } else {
+      setPriceTargetError(false);
+    }
+
+    // If no errors submit to database
+
+    if (phoneError === false && priceTargetError === false && priceTargetRef.current.value !== "" && phoneRef.current.value !== "") {
+      const id = uuidv4();
+      set(ref(db, `/${id}`), {
+        id,
+        ticker: cryptoCurrency.ticker,
+        cryptoName: cryptoCurrency.name,
+        watchPrice: priceTargetRef.current.value,
+        fiatCurrency,
+        phoneNumber: phoneRef.current.value,
+        beenAlerted: false,
+        belowAbove: belowAboveRef.current.value,
+      });
+
+      setSubmitSuccess(true);
+    }
+  };
 
   return (
     <>
@@ -88,9 +124,10 @@ function App() {
           Current {cryptoCurrency.name} Price: {price} {fiatCurrency}
         </p>
 
-        <form className="main__form">
+        <form className="main__form" onSubmit={handleSubmit}>
           <div className="main__box">
             <label className="main__label">Crypto Currency: </label>
+
             <select
               className="main__dropdown"
               onChange={(e) => {
@@ -99,57 +136,69 @@ function App() {
               defaultValue="BTC"
               ref={cryptoRef}
             >
-              {/* <option value="BTC">BTC</option>
-              <option value="ETH">ETH</option>
-              <option value="USDT">USDT</option>
-              <option value="BNB">BNB</option>
-              <option value="USDC">USDC</option>
-              <option value="XRP">XRP</option>
-              <option value="SOL">SOL</option>
-              <option value="LUNA">LUNA</option>
-              <option value="ADA">ADA</option> */}
-
-              {cryptoCurrencyList
-                .sort((a, b) => {
-                  return a.name.localeCompare(b.name);
-                })
-                .map((currency) => {
-                  return <option>{currency.name}</option>;
-                })}
+              <option value="BTC">Bitcoin</option>
+              <option value="ETH">Ethereum</option>
+              <option value="ADA">Cardano</option>
+              <option value="SOL">Solana</option>
             </select>
           </div>
 
           <div className="main__box">
-            <label className="main__price">Price target: </label>
-            <input ref={priceTargetRef} />
+            <label className="main__label">Notify Me when price is: </label>
+            <select ref={belowAboveRef}>
+              <option value="below">Below</option>
+              <option value="above">Above</option>
+            </select>
+            <input type="number" defaultValue={price} step="any" ref={priceTargetRef} />
           </div>
 
+          {priceTargetError && (
+            <div className="main__box">
+              <p>Please enter a valid price target!</p>
+            </div>
+          )}
+
           <div className="main__box">
-            <label>Fiat Currency Type: </label>
+            <label className="main__label">Fiat Currency Type: </label>
             <select
               onChange={(e) => {
                 changeFiatHandler(e);
               }}
               ref={fiatRef}
             >
-              {fiatCurrencyList.map((currency) => {
-                return <option>{currency}</option>;
-              })}
+              <option>USD</option>
+              <option>CAD</option>
+              <option>EUR</option>
+              <option>GBP</option>
+              <option>AUD</option>
+              <option>NZD</option>
+              <option>HKD</option>
+              <option>CNH</option>
+              <option>JPY</option>
             </select>
           </div>
 
           <div className="main__box">
-            <label className="main__phone">Phone Number: </label>
+            <label className="main__label">Phone Number: </label>
             <input ref={phoneRef} />
           </div>
+
+          {phoneError && (
+            <div className="main__box">
+              <p>Please enter a valid phone number!</p>
+            </div>
+          )}
+
           <div className="main__btn-container">
-            <button
-              // onSubmit={handleSubmit}
-              className="main__button"
-            >
+            <button className="main__button" disabled={submitSuccess}>
               Submit
             </button>
           </div>
+          {submitSuccess && (
+            <div className="main__box">
+              <p>{`Success! You will now get a text when ${cryptoCurrency.name} reaches ${belowAboveRef.current.value} ${priceTargetRef.current.value} ${fiatCurrency}`}</p>
+            </div>
+          )}
         </form>
       </div>
     </>
