@@ -6,13 +6,13 @@ import { getDatabase } from "firebase/database";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyAd4oQaBGLAnf9lxVb_HOPI_BaVEcBy0MQ",
-  authDomain: "price-of-crypto.firebaseapp.com",
-  databaseURL: "https://price-of-crypto-default-rtdb.firebaseio.com",
-  projectId: "price-of-crypto",
-  storageBucket: "price-of-crypto.appspot.com",
-  messagingSenderId: "753231151691",
-  appId: "1:753231151691:web:cf771915ecb853ffde43ce",
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
+  databaseURL: process.env.REACT_APP_FIREBASE_DATABASE_URL,
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.REACT_APP_FIREBASE_APP_ID,
 };
 
 // Initialize Firebase
